@@ -1,0 +1,5 @@
+- vigtigst: få programmet færdigt
+- oveevejelser om brug af AI - bevidst og velovervejet
+- synopsis: vælg hver især fokus, også ift. fremlæggelse
+- hvorfor 3 lag? modularisering, afhængigheder, osv. 
+- husk fagtermer

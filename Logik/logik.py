@@ -20,10 +20,15 @@ class MathProblem:
 
 
 def generate_problem(max_value: int = 10) -> MathProblem:
-    """Generate a simple addition or subtraction problem."""
+    """Generate a simple addition or subtraction problem with non-negative answers."""
     left = random.randint(0, max_value)
     right = random.randint(0, max_value)
     operator = random.choice(["+", "-"])
+
+    if operator == "-":
+        # Ensure subtraction does not go below zero
+        left, right = max(left, right), min(left, right)
+
     answer = left + right if operator == "+" else left - right
     return MathProblem(left=left, right=right, operator=operator, answer=answer)
 
