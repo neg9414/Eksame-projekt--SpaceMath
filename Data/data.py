@@ -39,10 +39,11 @@ class Database:
         )
         cur.execute(
             """
-            CREATE TABLE IF NOT EXISTS scores (
+            CREATE TABLE IF NOT EXISTS games (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_id INTEGER NOT NULL,
                 score INTEGER NOT NULL,
+                problems_solved INTEGER NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(student_id) REFERENCES students(id)
             )
@@ -60,40 +61,51 @@ class Database:
         row = cur.fetchone()
         return int(row["id"])
 
-    def save_score(self, student_id: int, score: int) -> None:
-        """Save a new score for a student."""
+    def save_game(self, student_id: int, score: int, problems_solved: int) -> None:
+        """Save a completed game for a student (10 problems = 1 game)."""
         assert self._conn is not None
         cur = self._conn.cursor()
         cur.execute(
-            "INSERT INTO scores (student_id, score) VALUES (?, ?)",
-            (student_id, score),
+            "INSERT INTO games (student_id, score, problems_solved) VALUES (?, ?, ?)",
+            (student_id, score, problems_solved),
         )
         self._conn.commit()
 
-    def get_latest_score(self, student_id: int) -> int:
-        """Return the most recent score for a student (or 0 if none)."""
+    def get_last_game_score(self, student_id: int) -> int:
+        """Return the most recent game score for a student (or 0 if none)."""
         assert self._conn is not None
         cur = self._conn.cursor()
         cur.execute(
-            "SELECT score FROM scores WHERE student_id = ? ORDER BY timestamp DESC LIMIT 1",
+            "SELECT score FROM games WHERE student_id = ? ORDER BY timestamp DESC LIMIT 1",
             (student_id,),
         )
         row = cur.fetchone()
         return int(row["score"]) if row else 0
 
     def get_stats(self, student_id: int) -> Dict[str, Any]:
-        """Return simple statistics for a student (attempts, average score)."""
+        """Return statistics for a student (games played, total score, average score)."""
         assert self._conn is not None
         cur = self._conn.cursor()
         cur.execute(
-            "SELECT COUNT(*) AS attempts, AVG(score) AS avg_score FROM scores WHERE student_id = ?",
+            "SELECT COUNT(*) AS games_played, SUM(score) AS total_score, AVG(score) AS avg_score FROM games WHERE student_id = ?",
             (student_id,),
         )
         row = cur.fetchone()
         return {
-            "attempts": int(row["attempts"] or 0),
+            "games_played": int(row["games_played"] or 0),
+            "total_score": int(row["total_score"] or 0),
             "avg_score": float(row["avg_score"] or 0.0),
         }
+
+    def get_all_games(self, student_id: int) -> list[tuple]:
+        """Return all games for a student as list of tuples."""
+        assert self._conn is not None
+        cur = self._conn.cursor()
+        cur.execute(
+            "SELECT id, student_id, score, problems_solved, timestamp FROM games WHERE student_id = ? ORDER BY timestamp DESC",
+            (student_id,),
+        )
+        return cur.fetchall()
 
     def close(self) -> None:
         """Close the database connection."""

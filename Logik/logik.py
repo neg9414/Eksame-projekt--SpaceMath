@@ -40,4 +40,54 @@ def check_answer(problem: MathProblem, guess: int) -> bool:
 
 def update_score(current_score: int, correct: bool) -> int:
     """Update a score based on whether the last answer was correct."""
-    return current_score + 1 if correct else max(0, current_score - 1)
+    return current_score + 1 if correct else current_score
+
+
+class GameSession:
+    """Håndterer en hel spilrunde (10 opgaver)."""
+    
+    PROBLEMS_PER_ROUND = 10  # Antal opgaver per runde
+    
+    def __init__(self):
+        self.problems_solved = 0
+        self.score = 0
+        self.current_problem: MathProblem = generate_problem()
+    
+    def submit_answer(self, guess: int) -> dict:
+        """Håndterer spiller-svar og returnerer feedbackinfo.
+        
+        Returns:
+            dict med keys:
+                - 'correct': bool (svar var korrekt)
+                - 'feedback': str (feedback til spiller)
+                - 'score': int (nuværende score)
+                - 'problems_solved': int (antal løste opgaver)
+                - 'is_complete': bool (er runde færdig?)
+        """
+        correct = check_answer(self.current_problem, guess)
+        self.score = update_score(self.score, correct)
+        self.problems_solved += 1
+        
+        feedback = "Rigtigt!" if correct else "Prøv igen."
+        is_complete = self.problems_solved >= self.PROBLEMS_PER_ROUND
+        
+        if not is_complete:
+            self.current_problem = generate_problem()
+        
+        return {
+            "correct": correct,
+            "feedback": feedback,
+            "score": self.score,
+            "problems_solved": self.problems_solved,
+            "is_complete": is_complete
+        }
+    
+    def reset(self) -> None:
+        """Reset for ny runde."""
+        self.problems_solved = 0
+        self.score = 0
+        self.current_problem = generate_problem()
+    
+    def get_current_problem(self) -> MathProblem:
+        """Returnerer nuværende opgave."""
+        return self.current_problem
