@@ -56,17 +56,17 @@ class SpaceMathGame:
         self.x_offset = 0
 
         # 🎮 SPIL BAGGRUND
-        path = os.path.join(base_path, "stastik", "spille_skeam.png")
+        path = os.path.join(base_path, "stastik", "spil.png")
         self.background = pygame.image.load(path)
         self.background = pygame.transform.scale(self.background, (self.WIDTH, self.HEIGHT))
 
         # 🏠 MENU BAGGRUND (DIN NYE)
-        menu_path = os.path.join(base_path, "stastik", "projekt_pro_start.png")
+        menu_path = os.path.join(base_path, "stastik", "menu.png")
         self.menu_background = pygame.image.load(menu_path)
         self.menu_background = pygame.transform.scale(self.menu_background, (self.WIDTH, self.HEIGHT))
 
         # 🏁 COMPLETION BAGGRUND
-        completion_path = os.path.join(base_path, "stastik", "slutside.png")
+        completion_path = os.path.join(base_path, "stastik", "slut.png")
         try:
             self.completion_background = pygame.image.load(completion_path)
             self.completion_background = pygame.transform.scale(self.completion_background, (self.WIDTH, self.HEIGHT))
@@ -83,8 +83,23 @@ class SpaceMathGame:
             # Fallback hvis billede ikke findes
             self.score_background = None
 
-        # 🔄 STATE (menu eller game)
-        self.state = "menu"
+        # ✅ START BAGGRUND
+        start_path = os.path.join(base_path, "stastik", "start.png")
+        try:
+            self.start_background = pygame.image.load(start_path)
+            self.start_background = pygame.transform.scale(self.start_background, (self.WIDTH, self.HEIGHT))
+        except:
+            self.start_background = None
+
+        # 🔄 STATE (start, menu, game, scores, completed, teacher)
+        self.state = "start"
+
+        # 🔘 STARTSKÆRM KNAPPER
+        button_width = 220
+        button_height = 70
+        button_x = self.WIDTH // 2 - button_width // 2
+        self.elev_button = pygame.Rect(button_x, 340, button_width, button_height)
+        self.teacher_button = pygame.Rect(button_x, 440, button_width, button_height)
 
         # 🔘 SPIL KNAP
         self.play_button = pygame.Rect(self.WIDTH//2 - 100, self.HEIGHT//2, 200, 10)
@@ -97,6 +112,9 @@ class SpaceMathGame:
         
         # 🔙 TILBAGE-KNAP (scores screen)
         self.scores_back_button = pygame.Rect(50, 50, 150, 50)
+
+        # 🔙 TILBAGE-KNAP (teacher screen)
+        self.teacher_back_button = pygame.Rect(50, 50, 150, 50)
 
         # Buttons til spil
         self.button_rects: dict[str, pygame.Rect] = {}
@@ -151,7 +169,59 @@ class SpaceMathGame:
 
         pygame.display.flip()
 
-    # 🏆 SCORE SCREEN
+    # � START SCREEN
+    def _render_start(self):
+        if self.start_background:
+            self.screen.blit(self.start_background, (0, 0))
+        else:
+            self.screen.fill((10, 10, 40))
+
+        mouse = pygame.mouse.get_pos()
+        for rect, label in [(self.teacher_button, "Lærer"), (self.elev_button, "Elev")]:
+            btn_color = (200, 100, 100) if rect.collidepoint(mouse) else (150, 50, 50)
+            pygame.draw.rect(self.screen, btn_color, rect, border_radius=12)
+            pygame.draw.rect(self.screen, (255, 200, 200), rect, 2, border_radius=12)
+            text = self.font.render(label, True, (255, 255, 255))
+            self.screen.blit(text, text.get_rect(center=rect.center))
+
+        pygame.display.flip()
+
+    # 🧑‍🏫 TEACHER OVERVIEW SCREEN
+    def _render_teacher_overview(self):
+        if self.score_background:
+            self.screen.blit(self.score_background, (0, 0))
+        else:
+            self.screen.fill((20, 20, 40))
+
+        mouse = pygame.mouse.get_pos()
+        title = self.font.render("Læreroversigt", True, (255, 255, 0))
+        title_rect = title.get_rect(center=(self.WIDTH // 2, 70))
+        self.screen.blit(title, title_rect)
+
+        pygame.draw.rect(self.screen, (200, 100, 100) if self.teacher_back_button.collidepoint(mouse) else (150, 50, 50), self.teacher_back_button, border_radius=8)
+        pygame.draw.rect(self.screen, (255, 200, 200), self.teacher_back_button, 2, border_radius=8)
+        back_text = self.font.render("Tilbage", True, (255, 255, 255))
+        self.screen.blit(back_text, back_text.get_rect(center=self.teacher_back_button.center))
+
+        students = self.db.get_all_students()
+        y_offset = 160
+        header = self.font.render("Navn                Runder    Point", True, (255, 255, 255))
+        self.screen.blit(header, (80, y_offset))
+        y_offset += 40
+
+        if students:
+            for student in students:
+                text = f"{student['name']:<15} {student['games_played']:>6}    {student['total_score']:>6}"
+                self._draw_text(text, 80, y_offset, (220, 220, 220))
+                y_offset += 35
+                if y_offset > self.HEIGHT - 80:
+                    break
+        else:
+            self._draw_text("Ingen elever fundet endnu.", 80, y_offset, (255, 255, 255))
+
+        pygame.display.flip()
+
+    # �🏆 SCORE SCREEN
     def _render_scores(self):
         """Tegn score-skærm med scores fra database."""
         # Tegn baggrund
@@ -388,7 +458,12 @@ class SpaceMathGame:
                         self.running = False
 
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if self.state == "menu":
+                    if self.state == "start":
+                        if self.elev_button.collidepoint(event.pos):
+                            self.state = "menu"
+                        elif self.teacher_button.collidepoint(event.pos):
+                            self.state = "teacher"
+                    elif self.state == "menu":
                         score_text = self.font.render("Se din score her", True, (255, 140, 0))
                         score_text_rect = score_text.get_rect(center=(self.WIDTH // 2, self.score_button.centery))
                         if self.play_button.collidepoint(event.pos):
@@ -401,7 +476,7 @@ class SpaceMathGame:
                             self.typing_timer = 0
                             self.displayed_problem = ""
                             self.displayed_answer = ""
-                            # Start preview for first problem
+                            # Start preview for første problem
                             self._start_preview()
                         elif score_text_rect.collidepoint(event.pos):
                             self.state = "scores"
@@ -413,15 +488,22 @@ class SpaceMathGame:
                     elif self.state == "scores":
                         if self.scores_back_button.collidepoint(event.pos):
                             self.state = "menu"
+                    elif self.state == "teacher":
+                        if self.teacher_back_button.collidepoint(event.pos):
+                            self.state = "start"
 
-            # 🔄 SKIFT MELLEM MENU, SPIL OG AFSLUTTET
-            if self.state == "menu":
+            # 🔄 SKIFT MELLEM STATES
+            if self.state == "start":
+                self._render_start()
+            elif self.state == "menu":
                 self._render_menu()
             elif self.state == "scores":
                 self._render_scores()
             elif self.state == "completed":
                 # Viser completion screen med Tilbage-knap
                 self._render_completed()
+            elif self.state == "teacher":
+                self._render_teacher_overview()
             else:  # game
                 self._render()
                 # Preview timer counts down only if not showing problem yet

@@ -107,6 +107,25 @@ class Database:
         )
         return cur.fetchall()
 
+    def get_all_students(self) -> list[sqlite3.Row]:
+        """Return all students with their total rounds and total points."""
+        assert self._conn is not None
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                s.id,
+                s.name,
+                COUNT(g.id) AS games_played,
+                COALESCE(SUM(g.score), 0) AS total_score
+            FROM students s
+            LEFT JOIN games g ON s.id = g.student_id
+            GROUP BY s.id, s.name
+            ORDER BY s.name
+            """,
+        )
+        return cur.fetchall()
+
     def close(self) -> None:
         """Close the database connection."""
         if self._conn is not None:
