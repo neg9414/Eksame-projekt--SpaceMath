@@ -1,127 +1,117 @@
-"""Presentation layer for SpaceMath.
-
-This module contains the Pygame user interface and is the only place where Pygame is imported.
+"""Presentation lag for SpaceMath.
+her er alt det visuelle i spillet (UI).
+det er også her Pygame bliver brugt, så resten af projektet ikke er afhængigt af det.
 """
 
+#import af de nødvendige ting fra Pygame og andre moduler
 from __future__ import annotations
-
-import sys
-from typing import Optional
 
 import pygame
 import os
+import sys
+from typing import Optional
 
+#GameSession styrer selve spillets regler og logik og generate_problem laver nye matematikopgaver
 from Logik.logik import GameSession, generate_problem
+
+#database bruges til at gemme elever og deres scores i en SQLite database, så det kan vises i spillet og i læreroversigten
 from Data.data import Database
 
-
+#denne klasse styrer hele spillet som, tegne på skærmen, input og game loop. Selve logikken bag det hele ligger i GameSession, så jeg holder det adskilt.
 class SpaceMathGame:
-    """A minimal Pygame-based game loop for SpaceMath."""
 
     WIDTH = 940
     HEIGHT = 780
 
+#her sætter jeg spillet op, indlæser billeder og fonts, opretter forbindelse til database osv. 
     def __init__(self, student_name: str = "Elev"):
         pygame.init()
+
+#opretter vindue og sætter titel
         pygame.display.set_caption("SpaceMath")
         self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
         self.clock = pygame.time.Clock()
         self.font = pygame.font.Font(None, 36)
+        self.score_font = pygame.font.SysFont("Consolas", 36)
 
         base_path = os.path.dirname(__file__)
+        assets_path = os.path.join(base_path, "Stastik")
         
-        # Digital font for problems and answers
         try:
-            digital_font_path = os.path.join(base_path, "Stastik", "digital-7.ttf")
+            digital_font_path = os.path.join(assets_path, "digital-7.ttf")
             self.digital_font = pygame.font.Font(digital_font_path, 48)
-        except:
-            # Fallback to monospace if font not found
+        except Exception:
             self.digital_font = pygame.font.SysFont("monospace", 48, bold=True)
 
+#database bruges til at gemme spilleners data
         self.db = Database()
         self.db.connect()
+
+#opretter elve i databse og gemmer id
         self.student_id = self.db.add_student(student_name)
 
-        # 🎮 GAME SESSION - Håndterer hele spilrunde logic
+#hele spilrunde logic
         self.game_session = GameSession()
         
         self.answer_text: str = ""
         self.feedback: str = ""
         self.feedback_timer = 0
         self.running = True
-        
-        # ⏱️ TIMER TIL AFSLUTTEDE SKÆRM
-        self.completion_timer = 0
+        self.preview_active = False
 
         self.x_offset = 0
 
-        # 🎮 SPIL BAGGRUND
-        path = os.path.join(base_path, "stastik", "spil.png")
+        path = os.path.join(assets_path, "spil.png")
         self.background = pygame.image.load(path)
         self.background = pygame.transform.scale(self.background, (self.WIDTH, self.HEIGHT))
 
-        # 🏠 MENU BAGGRUND (DIN NYE)
-        menu_path = os.path.join(base_path, "stastik", "menu.png")
+        menu_path = os.path.join(assets_path, "menu.png")
         self.menu_background = pygame.image.load(menu_path)
         self.menu_background = pygame.transform.scale(self.menu_background, (self.WIDTH, self.HEIGHT))
 
-        # 🏁 COMPLETION BAGGRUND
-        completion_path = os.path.join(base_path, "stastik", "slut.png")
+        completion_path = os.path.join(assets_path, "slut.png")
         try:
             self.completion_background = pygame.image.load(completion_path)
             self.completion_background = pygame.transform.scale(self.completion_background, (self.WIDTH, self.HEIGHT))
         except:
-            # Fallback hvis billede ikke findes
             self.completion_background = None
 
-        # 🏆 SCORE BAGGRUND
-        score_path = os.path.join(base_path, "stastik", "score.png")
+        score_path = os.path.join(assets_path, "score.png")
         try:
             self.score_background = pygame.image.load(score_path)
             self.score_background = pygame.transform.scale(self.score_background, (self.WIDTH, self.HEIGHT))
-        except:
-            # Fallback hvis billede ikke findes
+        except Exception:
             self.score_background = None
 
-        # ✅ START BAGGRUND
-        start_path = os.path.join(base_path, "stastik", "start.png")
+        start_path = os.path.join(assets_path, "start.png")
         try:
             self.start_background = pygame.image.load(start_path)
             self.start_background = pygame.transform.scale(self.start_background, (self.WIDTH, self.HEIGHT))
         except:
             self.start_background = None
 
-        # 🔄 STATE (start, menu, game, scores, completed, teacher)
+#jeg bruger et state system til at styre spillets flow, så jeg kan have forsekllige skærme
         self.state = "start"
 
-        # 🔘 STARTSKÆRM KNAPPER
         button_width = 220
         button_height = 70
         button_x = self.WIDTH // 2 - button_width // 2
         self.elev_button = pygame.Rect(button_x, 340, button_width, button_height)
         self.teacher_button = pygame.Rect(button_x, 440, button_width, button_height)
 
-        # 🔘 SPIL KNAP
         self.play_button = pygame.Rect(self.WIDTH//2 - 100, self.HEIGHT//2, 200, 10)
         
-        # 🏆 SE DIN SCORE KNAP (menu)
         self.score_button = pygame.Rect(self.WIDTH//2 - 120, self.HEIGHT//2 + 40, 240, 50)
         
-        # 🔙 TILBAGE-KNAP (completion screen)
         self.back_button = pygame.Rect(self.WIDTH//2 - 75, 450, 150, 50)
         
-        # 🔙 TILBAGE-KNAP (scores screen)
         self.scores_back_button = pygame.Rect(50, 50, 150, 50)
 
-        # 🔙 TILBAGE-KNAP (teacher screen)
         self.teacher_back_button = pygame.Rect(50, 50, 150, 50)
 
-        # Buttons til spil
         self.button_rects: dict[str, pygame.Rect] = {}
         self._create_buttons()
 
-        # New variables for preview and typing effect
-        self.preview_timer = 0
         self.preview_operator = ""
         self.typing_timer = 0
         self.displayed_problem = ""
@@ -130,22 +120,17 @@ class SpaceMathGame:
         self.blink_timer = 0
         self.preview_circle_pos = (self.WIDTH // 2, self.HEIGHT // 2)
 
-    def set_preview_circle_position(self, x: int, y: int) -> None:
-        """Set the preview circle position anywhere on screen."""
-        self.preview_circle_pos = (770, 610)
-
     def _draw_text(self, text: str, x: int, y: int, color: tuple[int, int, int] = (255, 255, 255)) -> None:
         surface = self.font.render(text, True, color)
         rect = surface.get_rect(topleft=(x + self.x_offset, y))
         self.screen.blit(surface, rect)
 
-    # 🏠 MENU RENDER
+#her bliver spillet tegnet hver frame af game loppet
     def _render_menu(self):
         self.screen.blit(self.menu_background, (0, 0))
 
         mouse = pygame.mouse.get_pos()
 
-        # SPIL HER knap
         color = (255, 255, 255)
         if self.play_button.collidepoint(mouse):
             color = (200, 200, 200)
@@ -153,23 +138,20 @@ class SpaceMathGame:
         text_rect = text.get_rect(center=self.play_button.center)
         self.screen.blit(text, text_rect)
         
-        # SE DIN SCORE link
         score_text = self.font.render("Se din score her", True, (255, 140, 0))
         score_text_rect = score_text.get_rect(center=(self.WIDTH // 2, self.score_button.centery))
-        
-        # Tjek om musen er over teksten
+
         mouse_over_score = score_text_rect.collidepoint(mouse)
         score_link_color = (255, 165, 0) if mouse_over_score else (255, 140, 0)
         score_text = self.font.render("Se din score her", True, score_link_color)
         score_text_rect = score_text.get_rect(center=(self.WIDTH // 2, self.score_button.centery))
         self.screen.blit(score_text, score_text_rect)
-        # Tegn understreg
         underline_y = score_text_rect.bottom + 2
         pygame.draw.line(self.screen, score_link_color, (score_text_rect.left, underline_y), (score_text_rect.right, underline_y), 2)
 
         pygame.display.flip()
 
-    # � START SCREEN
+
     def _render_start(self):
         if self.start_background:
             self.screen.blit(self.start_background, (0, 0))
@@ -186,7 +168,6 @@ class SpaceMathGame:
 
         pygame.display.flip()
 
-    # 🧑‍🏫 TEACHER OVERVIEW SCREEN
     def _render_teacher_overview(self):
         if self.score_background:
             self.screen.blit(self.score_background, (0, 0))
@@ -194,7 +175,7 @@ class SpaceMathGame:
             self.screen.fill((20, 20, 40))
 
         mouse = pygame.mouse.get_pos()
-        title = self.font.render("Læreroversigt", True, (255, 255, 0))
+        title = self.score_font.render("Læreroversigt", True, (255, 255, 0))
         title_rect = title.get_rect(center=(self.WIDTH // 2, 70))
         self.screen.blit(title, title_rect)
 
@@ -205,33 +186,30 @@ class SpaceMathGame:
 
         students = self.db.get_all_students()
         y_offset = 160
-        header = self.font.render("Navn                Runder    Point", True, (255, 255, 255))
+        header = self.score_font.render("Navn                Runder    Point", True, (30, 30, 30))
         self.screen.blit(header, (80, y_offset))
         y_offset += 40
 
         if students:
             for student in students:
                 text = f"{student['name']:<15} {student['games_played']:>6}    {student['total_score']:>6}"
-                self._draw_text(text, 80, y_offset, (220, 220, 220))
+                line = self.score_font.render(text, True, (30, 30, 30))
+                self.screen.blit(line, line.get_rect(topleft=(80, y_offset)))
                 y_offset += 35
                 if y_offset > self.HEIGHT - 80:
                     break
         else:
-            self._draw_text("Ingen elever fundet endnu.", 80, y_offset, (255, 255, 255))
+            line = self.score_font.render("Ingen elever fundet endnu.", True, (30, 30, 30))
+            self.screen.blit(line, line.get_rect(topleft=(80, y_offset)))
 
         pygame.display.flip()
 
-    # �🏆 SCORE SCREEN
     def _render_scores(self):
-        """Tegn score-skærm med scores fra database."""
-        # Tegn baggrund
         if self.score_background:
             self.screen.blit(self.score_background, (0, 0))
         else:
-            # Fallback farve hvis billede ikke findes
             self.screen.fill((20, 20, 50))
         
-        # Tilbage-knap
         mouse = pygame.mouse.get_pos()
         back_btn_color = (200, 100, 100) if self.scores_back_button.collidepoint(mouse) else (150, 50, 50)
         pygame.draw.rect(self.screen, back_btn_color, self.scores_back_button, border_radius=8)
@@ -240,40 +218,35 @@ class SpaceMathGame:
         back_text_rect = back_text.get_rect(center=self.scores_back_button.center)
         self.screen.blit(back_text, back_text_rect)
         
-        # Vis scores fra database
         scores = self.db.get_all_games(self.student_id)  # Hent alle scores
-        self._draw_text("Dine scores:", 100, 120, (255, 255, 0))
+        title_text = self.score_font.render("Dine scores:", True, (20, 20, 20))
+        self.screen.blit(title_text, title_text.get_rect(topleft=(100, 120)))
         y_offset = 180
         for i, game in enumerate(scores):
-            score_info = f"Spil {i+1}: {game[3]}/10 korrekt - Score: {game[4]}"
-            self._draw_text(score_info, 100, y_offset, (255, 255, 255))
+            score_info = f"Spil {i+1}: {game['problems_solved']}/10 korrekt - Score: {game['score']}"
+            score_line = self.score_font.render(score_info, True, (30, 30, 30))
+            self.screen.blit(score_line, score_line.get_rect(topleft=(100, y_offset)))
             y_offset += 40
         
         pygame.display.flip()
 
-    # ✅ COMPLETION SCREEN
     def _render_completed(self):
-        """Tegn afsluttede skærm med score."""
-        # Tegn baggrund
+
         if self.completion_background:
             self.screen.blit(self.completion_background, (0, 0))
         else:
-            # Fallback farve hvis billede ikke findes
             self.screen.fill((30, 30, 60))
         
-        # Stor font til Tillykke
         large_font = pygame.font.Font(None, 120)
         tillykke_text = large_font.render("Tillykke!", True, (255, 255, 0))
         tillykke_rect = tillykke_text.get_rect(center=(self.WIDTH // 2, 200))
         self.screen.blit(tillykke_text, tillykke_rect)
-        
-        # Stor font til Score
+
         score_font = pygame.font.Font(None, 80)
         score_text = score_font.render(f"Score: {self.game_session.score}", True, (255, 255, 255))
         score_rect = score_text.get_rect(center=(self.WIDTH // 2, 350))
         self.screen.blit(score_text, score_rect)
-        
-        # Tilbage-knap
+
         mouse = pygame.mouse.get_pos()
         button_color = (200, 100, 100) if self.back_button.collidepoint(mouse) else (150, 50, 50)
         pygame.draw.rect(self.screen, button_color, self.back_button, border_radius=8)
@@ -315,21 +288,16 @@ class SpaceMathGame:
             if rect.collidepoint(pos):
                 if label == "OK":
                     self._handle_submit()
-                elif label in ("C", "Slet"):
-                    if label == "Slet":
-                        self.answer_text = self.answer_text[:-1]
-                    else:
-                        self.answer_text = ""
+                elif label == "Slet":
+                    self.answer_text = self.answer_text[:-1]
                 else:
                     self.answer_text += label
                 return
 
-    # 🎮 SPIL RENDER
     def _render(self) -> None:
         self.screen.fill((0, 0, 0))
         self.screen.blit(self.background, (0, 0))
-        
-        # Show progress next to SpaceMath
+
         current_problem = min(self.game_session.problems_solved + 1, self.game_session.PROBLEMS_PER_ROUND)
         progress = f"{current_problem}/{self.game_session.PROBLEMS_PER_ROUND}"
         self._draw_text("SpaceMath", 80, 30, (255, 255, 0))
@@ -337,10 +305,9 @@ class SpaceMathGame:
         
         self._draw_text(f"Score: {self.game_session.score}", 720, 700, (0, 0, 0))
         
-        if self.preview_timer > 0:
-            # Show preview button
+        if self.preview_active:
             self._draw_preview_button()
-            # Start showing problem after 2 blinks (about 40 frames)
+# viser ploblemmet efter 2 blinks
             if self.blink_timer >= 40 and not self.show_problem:
                 self.show_problem = True
                 self.typing_timer = 0
@@ -351,10 +318,8 @@ class SpaceMathGame:
                 self._draw_digital_text(self.displayed_problem, 80, 530, (255, 255, 255))
                 self._draw_digital_text(self.displayed_answer, 320, 530, (255, 255, 255))
         elif self.feedback_timer > 0:
-            # Vis kun feedback når der er feedback
             self._draw_digital_text(self.feedback, 80, 530, (255, 255, 255))
         else:
-            # Vis problem og input når der ikke er feedback
             self._update_typing_effect()
             self._draw_digital_text(self.displayed_problem, 80, 530, (255, 255, 255))
             self._draw_digital_text(self.displayed_answer, 320, 530, (255, 255, 255))
@@ -363,11 +328,10 @@ class SpaceMathGame:
             self.feedback_timer -= 1
             if self.feedback_timer == 0:
                 self.feedback = ""
-                # Start preview for next problem
+#starter preview for næste problem
                 if self.game_session.problems_solved < self.game_session.PROBLEMS_PER_ROUND:
                     self._start_preview()
                 else:
-                    # Runde er færdig, gå til completion screen
                     self.state = "completed"
 
         self._draw_buttons()
@@ -375,50 +339,42 @@ class SpaceMathGame:
         pygame.display.flip()
 
     def _draw_preview_button(self) -> None:
-        """Draw the blinking preview button for next operator."""
-        # Blink with longer on-time: 10 frames on, 10 frames off
         if (self.blink_timer // 10) % 2 == 0:
             color = (170, 50, 50) if self.preview_operator == "-" else (50, 170, 50)
             x, y = self.preview_circle_pos
             pygame.draw.circle(self.screen, color, (770, 610), 40)
 
     def _start_preview(self) -> None:
-        """Start the preview phase for the next problem."""
         next_problem = generate_problem()
         self.preview_operator = next_problem.operator
-        self.preview_timer = 9999  # Keep preview active until answer
+        self.preview_active = True
         self.blink_timer = 0
-        self.typing_timer = 0  # Reset typing effect
+        self.typing_timer = 0  #reset typing effect
         self.game_session.current_problem = next_problem
         self.displayed_problem = ""
         self.displayed_answer = ""
         self.show_problem = False
 
     def _update_typing_effect(self) -> None:
-        """Update the typing effect for problem and answer."""
         problem = self.game_session.current_problem
         full_problem = f"{problem.left} {problem.operator} {problem.right} ="
         
-        if self.typing_timer % 5 == 0:  # Every 5 frames, add a character (faster)
+        if self.typing_timer % 5 == 0:
             if len(self.displayed_problem) < len(full_problem):
                 self.displayed_problem = full_problem[:len(self.displayed_problem) + 1]
         
-        # Always show full answer as user types
         self.displayed_answer = self.answer_text
         self.typing_timer += 1
 
     def _draw_digital_text(self, text: str, x: int, y: int, color: tuple[int, int, int]) -> None:
-        """Draw text with digital font."""
         surface = self.digital_font.render(text, True, color)
         rect = surface.get_rect(topleft=(x + self.x_offset, y))
         self.screen.blit(surface, rect)
 
+#denne funktion håndterer når spilleren svarer. Jeg validerer først input (skal være tal), derefter sender jeg svaret til GameSession som så afgør om det er rigtigt eller forkert
     def _handle_submit(self) -> None:
-        """Håndterer indsendt svar."""
         if not self.answer_text.strip():
-            return
-        
-        # Valider input
+            return       
         try:
             guess = int(self.answer_text.strip())
         except ValueError:
@@ -426,27 +382,21 @@ class SpaceMathGame:
             self.answer_text = ""
             return
 
-        # Lad game_session håndtere svaret
         result = self.game_session.submit_answer(guess)
-        
-        # Opdater UI baseret på resultat
+
         self.feedback = result["feedback"]
         self.feedback_timer = 90
         self.answer_text = ""
-        self.preview_timer = 0  # Stop preview
+        self.preview_active = False  #stop preview
         self.show_problem = False
         self.blink_timer = 0
         
-        # ✅ TJEK OM RUNDE ER FÆRDIG
         if result["is_complete"]:
-            # Gem hele runden til database
+#gemmer hele runden til database
             self.db.save_game(self.student_id, result["score"], result["problems_solved"])
-            # Gå til afsluttede skærm efter feedback vises
-            # (feedback_timer håndterer overgangen i _render())
-            self.state = "game"  # Bliv i game state mens feedback vises
+            self.state = "game"
         
-        # Preview startes når feedback_timer når 0 (se _render)
-
+#hjerte af mit spil, det er her alt sker og spillet kører. Jeg bruger start systemmet til at skifte mellem forskellige skærme. der sker også en håndtering af input, rendering for hver state og lukkelsen af databaseforbindelsen og pygame ordentligt når spillet sluttes
     def run(self) -> None:
         while self.running:
             for event in pygame.event.get():
@@ -468,15 +418,15 @@ class SpaceMathGame:
                         score_text_rect = score_text.get_rect(center=(self.WIDTH // 2, self.score_button.centery))
                         if self.play_button.collidepoint(event.pos):
                             self.state = "game"
-                            # Reset for ny runde
+                            #reset for ny runde
                             self.game_session.reset()
                             self.answer_text = ""
                             self.feedback = ""
-                            self.preview_timer = 0
+                            self.preview_active = False
                             self.typing_timer = 0
                             self.displayed_problem = ""
                             self.displayed_answer = ""
-                            # Start preview for første problem
+                            #starter preview for første problem
                             self._start_preview()
                         elif score_text_rect.collidepoint(event.pos):
                             self.state = "scores"
@@ -492,7 +442,6 @@ class SpaceMathGame:
                         if self.teacher_back_button.collidepoint(event.pos):
                             self.state = "start"
 
-            # 🔄 SKIFT MELLEM STATES
             if self.state == "start":
                 self._render_start()
             elif self.state == "menu":
@@ -500,14 +449,12 @@ class SpaceMathGame:
             elif self.state == "scores":
                 self._render_scores()
             elif self.state == "completed":
-                # Viser completion screen med Tilbage-knap
                 self._render_completed()
             elif self.state == "teacher":
                 self._render_teacher_overview()
             else:  # game
                 self._render()
-                # Preview timer counts down only if not showing problem yet
-                if self.preview_timer > 0:
+                if self.preview_active:
                     self.blink_timer += 1
 
             self.clock.tick(30)
@@ -515,3 +462,4 @@ class SpaceMathGame:
         self.db.close()
         pygame.quit()
         sys.exit()
+#når spillet lukker, slutter dadabaseforbindelsen og pygame ordentligt, så der ikke er noget tilbage der kører i baggrunden eller åbne forbindelser
